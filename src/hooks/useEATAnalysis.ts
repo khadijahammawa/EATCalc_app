@@ -1,20 +1,13 @@
 import { useState, useCallback } from 'react';
-import type { 
-  AnalysisParams, 
-  AnalysisResults, 
-  AnalysisProgress, 
-  AnalysisStatus 
+import type {
+  AnalysisParams,
+  AnalysisResults,
+  AnalysisProgress,
+  AnalysisResponse,
+  AnalysisStatus,
 } from '@/types/eat';
 
-// Mock data for demo - replace with actual API calls
-const MOCK_RESULTS: AnalysisResults = {
-  eatVolume: 127.4,
-  meanHU: -82.3,
-  stdHU: 24.7,
-  voxelZoom: [0.7, 0.7, 2.5],
-  totalSlices: 120,
-  outputPath: '/output/eat_analysis',
-};
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 interface UseEATAnalysisReturn {
   results: AnalysisResults | null;
@@ -45,30 +38,43 @@ export function useEATAnalysis(): UseEATAnalysisReturn {
     }
 
     try {
-      // Stage 1: Upload
       updateProgress('uploading', 'Uploading CT scan...', 10);
-      await simulateDelay(800);
-      updateProgress('uploading', 'Upload complete', 25);
+      const formData = new FormData();
+      formData.append('file', params.inputFile);
+      if (params.outputPath) {
+        formData.append('output_path', params.outputPath);
+      }
+      formData.append('hu_low', params.huLow.toString());
+      formData.append('hu_high', params.huHigh.toString());
+      formData.append('device', params.device);
 
-      // Stage 2: Segmentation (TotalSegmentator)
-      updateProgress('segmenting', 'Running TotalSegmentator...', 30);
-      await simulateDelay(1500);
-      updateProgress('segmenting', 'Extracting pericardium...', 50);
-      await simulateDelay(1000);
-
-      // Stage 3: EAT Calculation
-      updateProgress('calculating', 'Computing EAT volume...', 70);
-      await simulateDelay(800);
-      updateProgress('calculating', 'Applying HU thresholds...', 85);
-      await simulateDelay(600);
-
-      // Complete
-      setResults({
-        ...MOCK_RESULTS,
-        outputPath: params.outputPath || MOCK_RESULTS.outputPath,
+      updateProgress('segmenting', 'Running analysis...', 35);
+      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+        method: 'POST',
+        body: formData,
       });
-      updateProgress('complete', 'Analysis complete', 100);
 
+      if (!response.ok) {
+        let detail = 'Analysis failed';
+        try {
+          const payload = (await response.json()) as { detail?: string };
+          if (payload.detail) {
+            detail = payload.detail;
+          }
+        } catch {
+          // ignore JSON parsing errors
+        }
+        throw new Error(detail);
+      }
+
+      updateProgress('calculating', 'Finalizing results...', 85);
+      const data = (await response.json()) as AnalysisResponse;
+      if (!data.success || !data.results) {
+        throw new Error(data.error || 'Analysis failed');
+      }
+
+      setResults(data.results as AnalysisResults);
+      updateProgress('complete', 'Analysis complete', 100);
     } catch (error) {
       updateProgress('error', error instanceof Error ? error.message : 'Analysis failed', 0);
     }
@@ -88,35 +94,3 @@ export function useEATAnalysis(): UseEATAnalysisReturn {
   };
 }
 
-// Helper for demo simulation
-function simulateDelay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// ============================================================
-// API Integration Points
-// ============================================================
-// When connecting to your Python backend, replace the mock
-// implementation above with actual API calls:
-//
-// async function startAnalysis(params: AnalysisParams) {
-//   // 1. Upload file
-//   const formData = new FormData();
-//   formData.append('file', params.inputFile);
-//   formData.append('hu_low', params.huLow.toString());
-//   formData.append('hu_high', params.huHigh.toString());
-//   formData.append('device', params.device);
-//   
-//   const response = await fetch('/api/analyze', {
-//     method: 'POST',
-//     body: formData,
-//   });
-//   
-//   // 2. Poll for status or use WebSocket for real-time updates
-//   // const ws = new WebSocket('ws://your-backend/ws/analysis');
-//   // ws.onmessage = (event) => {
-//   //   const update = JSON.parse(event.data);
-//   //   updateProgress(update.status, update.message, update.progress);
-//   // };
-// }
-// ============================================================

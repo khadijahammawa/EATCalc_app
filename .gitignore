@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Backend output/cache
+backend/output/
+output/
+backend/cache/
+cache/
+
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/

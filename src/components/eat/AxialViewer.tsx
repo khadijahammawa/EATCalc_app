@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, ChevronLeft, ChevronRight, RotateCcw, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -14,6 +14,8 @@ interface AxialViewerProps {
   onPrevSlice: () => void;
   onToggleLayer: (layer: 'ct' | 'eat' | 'pericardium') => void;
   onOpacityChange: (opacity: number) => void;
+  onRotateLeft: () => void;
+  onRotateRight: () => void;
   hasData: boolean;
 }
 
@@ -25,6 +27,8 @@ export function AxialViewer({
   onPrevSlice,
   onToggleLayer,
   onOpacityChange,
+  onRotateLeft,
+  onRotateRight,
   hasData,
 }: AxialViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -89,6 +93,29 @@ export function AxialViewer({
             label="Pericardium"
             color="bg-success"
           />
+
+          <div className="flex items-center gap-2 pl-2 border-l border-border">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onRotateLeft}
+              disabled={!hasData}
+              title="Rotate left"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onRotateRight}
+              disabled={!hasData}
+              title="Rotate right"
+            >
+              <RotateCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
 
         {/* Opacity control */}

@@ -15,6 +15,8 @@ export interface AnalysisResults {
   voxelZoom: [number, number, number];
   totalSlices: number;
   outputPath: string;
+  analysisId?: string;
+  statsCsv?: string;
 }
 
 export interface SliceData {
@@ -30,6 +32,7 @@ export interface ViewerState {
   showEAT: boolean;
   showPericardium: boolean;
   overlayOpacity: number;
+  rotation: number;
 }
 
 export type AnalysisStatus = 
