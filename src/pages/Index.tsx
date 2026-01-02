@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 
 const Index = () => {
   const { results, progress, isProcessing, startAnalysis, resetAnalysis } = useEATAnalysis();
-  const { viewerState, setSlice, nextSlice, prevSlice, toggleLayer, setOpacity, rotateLeft, rotateRight, setTotalSlices, setAnalysisId, canvasRef } = useSliceViewer();
+  const { viewerState, setSlice, nextSlice, prevSlice, onWheelDelta, toggleLayer, setOpacity, rotateLeft, rotateRight, setTotalSlices, setAnalysisId, canvasRef } = useSliceViewer();
 
   useEffect(() => {
     if (results) {
@@ -38,7 +38,7 @@ const Index = () => {
           </div>
         </aside>
         <main className="flex-1 flex flex-col overflow-hidden bg-muted/20">
-          <AxialViewer viewerState={viewerState} canvasRef={canvasRef} onSliceChange={setSlice} onNextSlice={nextSlice} onPrevSlice={prevSlice} onToggleLayer={toggleLayer} onOpacityChange={setOpacity} onRotateLeft={rotateLeft} onRotateRight={rotateRight} hasData={hasData} />
+          <AxialViewer viewerState={viewerState} canvasRef={canvasRef} onSliceChange={setSlice} onNextSlice={nextSlice} onPrevSlice={prevSlice} onWheelDelta={onWheelDelta} onToggleLayer={toggleLayer} onOpacityChange={setOpacity} onRotateLeft={rotateLeft} onRotateRight={rotateRight} hasData={hasData} />
         </main>
       </div>
       <StatusBar progress={progress} />

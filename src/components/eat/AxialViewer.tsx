@@ -12,6 +12,7 @@ interface AxialViewerProps {
   onSliceChange: (slice: number) => void;
   onNextSlice: () => void;
   onPrevSlice: () => void;
+  onWheelDelta: (deltaY: number) => void;
   onToggleLayer: (layer: 'ct' | 'eat' | 'pericardium') => void;
   onOpacityChange: (opacity: number) => void;
   onRotateLeft: () => void;
@@ -25,6 +26,7 @@ export function AxialViewer({
   onSliceChange,
   onNextSlice,
   onPrevSlice,
+  onWheelDelta,
   onToggleLayer,
   onOpacityChange,
   onRotateLeft,
@@ -40,16 +42,12 @@ export function AxialViewer({
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (e.deltaY < 0) {
-        onPrevSlice();
-      } else {
-        onNextSlice();
-      }
+      onWheelDelta(e.deltaY);
     };
 
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
-  }, [hasData, onNextSlice, onPrevSlice]);
+  }, [hasData, onWheelDelta]);
 
   // Handle keyboard navigation
   useEffect(() => {
