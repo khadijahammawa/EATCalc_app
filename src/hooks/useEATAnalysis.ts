@@ -47,6 +47,7 @@ export function useEATAnalysis(): UseEATAnalysisReturn {
       formData.append('hu_low', params.huLow.toString());
       formData.append('hu_high', params.huHigh.toString());
       formData.append('device', params.device);
+      formData.append('save_eat_mask', params.saveEATMask ? 'true' : 'false');
 
       updateProgress('segmenting', 'Running analysis...', 35);
       const response = await fetch(`${API_BASE_URL}/api/analyze`, {
@@ -93,4 +94,3 @@ export function useEATAnalysis(): UseEATAnalysisReturn {
     resetAnalysis,
   };
 }
-

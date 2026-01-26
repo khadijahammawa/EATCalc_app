@@ -13,7 +13,12 @@ import numpy as np
 import nibabel as nib
 from PIL import Image
 
-from backend.eat_core import compute_eat_and_stats, run_totalsegmentation, save_stats_csv
+from backend.eat_core import (
+    compute_eat_and_stats,
+    run_totalsegmentation,
+    save_eat_mask_nifti,
+    save_stats_csv,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -88,6 +93,7 @@ async def analyze(
     hu_low: float = Form(-190.0),
     hu_high: float = Form(-30.0),
     device: str = Form("cpu"),
+    save_eat_mask: bool = Form(False),
 ) -> dict:
     if not file.filename:
         raise HTTPException(status_code=400, detail="No input file provided.")
@@ -120,6 +126,14 @@ async def analyze(
             mean_hu=results["mean_hu"],
             std_hu=results["std_hu"],
         )
+        if save_eat_mask:
+            save_eat_mask_nifti(
+                str(output_dir),
+                str(ct_path),
+                pericardium_path,
+                hu_low,
+                hu_high,
+            )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:

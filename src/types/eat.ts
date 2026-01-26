@@ -6,6 +6,7 @@ export interface AnalysisParams {
   huLow: number;
   huHigh: number;
   device: 'cpu' | 'gpu';
+  saveEATMask: boolean;
 }
 
 export interface AnalysisResults {

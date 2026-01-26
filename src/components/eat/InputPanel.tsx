@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Upload, Folder, Play, RotateCcw, Cpu, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,6 +20,7 @@ export function InputPanel({ onStartAnalysis, onReset, isProcessing, hasResults 
   const [huLow, setHuLow] = useState(-190);
   const [huHigh, setHuHigh] = useState(-30);
   const [device, setDevice] = useState<'cpu' | 'gpu'>('cpu');
+  const [saveEATMask, setSaveEATMask] = useState(false);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -34,6 +36,7 @@ export function InputPanel({ onStartAnalysis, onReset, isProcessing, hasResults 
       huLow,
       huHigh,
       device,
+      saveEATMask,
     });
   };
 
@@ -88,6 +91,23 @@ export function InputPanel({ onStartAnalysis, onReset, isProcessing, hasResults 
               disabled={isProcessing}
             />
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="save-eat-mask"
+              checked={saveEATMask}
+              onCheckedChange={(checked) => setSaveEATMask(checked === true)}
+              disabled={isProcessing}
+            />
+            <Label htmlFor="save-eat-mask" className="text-sm text-muted-foreground">
+              Save EAT mask (NIfTI)
+            </Label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Outputs EAT_mask_{'{'}hu_low{'}'}_{'{'}hu_high{'}'}.nii.gz to the output folder.
+          </p>
         </div>
       </div>
 

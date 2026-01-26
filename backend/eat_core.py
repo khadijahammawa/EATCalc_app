@@ -113,6 +113,63 @@ def compute_eat_and_stats(
     return results
 
 
+def _format_hu_for_filename(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def save_eat_mask_nifti(
+    out_dir: str,
+    ct_path: str,
+    pericardium_path: str,
+    low_hu: float,
+    high_hu: float,
+) -> str:
+    """Save EAT mask as NIfTI using CT affine/header for alignment."""
+    os.makedirs(out_dir, exist_ok=True)
+
+    ct_img = nib.load(ct_path)
+    ct_data = ct_img.get_fdata()
+    peri_img = nib.load(pericardium_path)
+    peri_data = peri_img.get_fdata()
+
+    if ct_data.ndim != 3:
+        raise ValueError("CT data must be 3D. Got shape {}".format(ct_data.shape))
+
+    if peri_data.shape != ct_data.shape:
+        raise ValueError(
+            "Mask shape {} does not match CT shape {}.".format(
+                peri_data.shape, ct_data.shape
+            )
+        )
+
+    pericardium_mask = peri_data > 0
+    eat_mask = np.logical_and(
+        pericardium_mask,
+        np.logical_and(ct_data >= low_hu, ct_data <= high_hu),
+    )
+
+    header = ct_img.header.copy()
+    header.set_data_dtype(np.uint8)
+    mask_img = nib.Nifti1Image(eat_mask.astype(np.uint8), ct_img.affine, header=header)
+
+    qform, qcode = ct_img.header.get_qform(coded=True)
+    sform, scode = ct_img.header.get_sform(coded=True)
+    if qform is not None:
+        mask_img.set_qform(qform, int(qcode))
+    if sform is not None:
+        mask_img.set_sform(sform, int(scode))
+
+    filename = "EAT_mask_{}_{}.nii.gz".format(
+        _format_hu_for_filename(low_hu),
+        _format_hu_for_filename(high_hu),
+    )
+    out_path = os.path.join(out_dir, filename)
+    nib.save(mask_img, out_path)
+    return out_path
+
+
 def save_stats_csv(
     out_dir: str,
     ct_path: str,
