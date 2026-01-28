@@ -9,6 +9,15 @@ export interface AnalysisParams {
   saveEATMask: boolean;
 }
 
+export interface BatchAnalysisParams {
+  inputFiles: File[];
+  outputPath: string;
+  huLow: number;
+  huHigh: number;
+  device: 'cpu' | 'gpu';
+  saveEATMask: boolean;
+}
+
 export interface AnalysisResults {
   eatVolume: number; // in mL
   meanHU: number;
@@ -18,6 +27,26 @@ export interface AnalysisResults {
   outputPath: string;
   analysisId?: string;
   statsCsv?: string;
+}
+
+export interface BatchAnalysisItem {
+  participantId: string;
+  participantFolder: string;
+  inputFile: string;
+  outputDir: string;
+  status: 'success' | 'error';
+  error?: string;
+}
+
+export interface BatchAnalysisResults {
+  batchId: string;
+  outputPath: string;
+  manifestPath: string;
+  statsCsv?: string | null;
+  total: number;
+  succeeded: number;
+  failed: number;
+  items: BatchAnalysisItem[];
 }
 
 export interface SliceData {
@@ -54,6 +83,12 @@ export interface AnalysisProgress {
 export interface AnalysisResponse {
   success: boolean;
   results?: AnalysisResults;
+  error?: string;
+}
+
+export interface BatchAnalysisResponse {
+  success: boolean;
+  results?: BatchAnalysisResults;
   error?: string;
 }
 

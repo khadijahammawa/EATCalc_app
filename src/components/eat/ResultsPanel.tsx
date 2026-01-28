@@ -1,15 +1,16 @@
-import { Heart, Activity, BarChart3, Copy, Download } from 'lucide-react';
+import { Heart, Activity, BarChart3, Copy, Download, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import type { AnalysisResults } from '@/types/eat';
+import type { AnalysisResults, BatchAnalysisResults } from '@/types/eat';
 import { toast } from 'sonner';
 
 interface ResultsPanelProps {
   results: AnalysisResults | null;
+  batchResults: BatchAnalysisResults | null;
 }
 
-export function ResultsPanel({ results }: ResultsPanelProps) {
-  if (!results) {
+export function ResultsPanel({ results, batchResults }: ResultsPanelProps) {
+  if (!results && !batchResults) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-center">
         <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -20,6 +21,128 @@ export function ResultsPanel({ results }: ResultsPanelProps) {
         </p>
       </div>
     );
+  }
+
+  if (batchResults) {
+    const handleCopyPath = (label: string, value: string | null | undefined) => {
+      if (!value) return;
+      navigator.clipboard.writeText(value);
+      toast.success(`${label} copied to clipboard`);
+    };
+
+    const hasFailures = batchResults.failed > 0;
+
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="text-center py-4 px-3 rounded-xl bg-primary/5 border border-primary/10">
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <ClipboardList className="h-5 w-5 text-primary" />
+            <span className="text-sm font-medium text-primary uppercase tracking-wide">
+              Batch Summary
+            </span>
+          </div>
+          <p className="metric-value text-3xl text-primary">
+            {batchResults.succeeded} / {batchResults.total}
+            <span className="text-sm font-normal text-primary/70 ml-2">processed</span>
+          </p>
+          {hasFailures && (
+            <p className="text-xs text-destructive mt-1">
+              {batchResults.failed} failed (see manifest)
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <MetricCard
+            icon={<Activity className="h-4 w-4" />}
+            label="Total"
+            value={batchResults.total.toString()}
+            unit=""
+          />
+          <MetricCard
+            icon={<BarChart3 className="h-4 w-4" />}
+            label="Succeeded"
+            value={batchResults.succeeded.toString()}
+            unit=""
+          />
+          <MetricCard
+            icon={<Heart className="h-4 w-4" />}
+            label="Failed"
+            value={batchResults.failed.toString()}
+            unit=""
+          />
+        </div>
+
+        <Separator />
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Output Folder
+          </p>
+          <p className="text-xs font-mono text-foreground break-all">
+            {batchResults.outputPath}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Manifest
+          </p>
+          <p className="text-xs font-mono text-foreground break-all">
+            {batchResults.manifestPath}
+          </p>
+        </div>
+
+        {batchResults.statsCsv && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Stats CSV
+            </p>
+            <p className="text-xs font-mono text-foreground break-all">
+              {batchResults.statsCsv}
+            </p>
+          </div>
+        )}
+
+        <Separator />
+
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => handleCopyPath('Output folder', batchResults.outputPath)}
+          >
+            <Copy className="h-3.5 w-3.5 mr-1.5" />
+            Copy output
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => handleCopyPath('Manifest path', batchResults.manifestPath)}
+          >
+            <Copy className="h-3.5 w-3.5 mr-1.5" />
+            Copy manifest
+          </Button>
+          {batchResults.statsCsv && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => handleCopyPath('Stats CSV path', batchResults.statsCsv)}
+            >
+              <Copy className="h-3.5 w-3.5 mr-1.5" />
+              Copy stats
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (!results) {
+    return null;
   }
 
   const handleCopyResults = () => {
