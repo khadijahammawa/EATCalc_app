@@ -2,8 +2,11 @@ import { useState, useCallback } from 'react';
 import type {
   AnalysisParams,
   AnalysisResults,
+  BatchAnalysisParams,
+  BatchAnalysisResults,
   AnalysisProgress,
   AnalysisResponse,
+  BatchAnalysisResponse,
   AnalysisStatus,
 } from '@/types/eat';
 
@@ -11,14 +14,17 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 
 interface UseEATAnalysisReturn {
   results: AnalysisResults | null;
+  batchResults: BatchAnalysisResults | null;
   progress: AnalysisProgress;
   isProcessing: boolean;
   startAnalysis: (params: AnalysisParams) => Promise<void>;
+  startBatchAnalysis: (params: BatchAnalysisParams) => Promise<void>;
   resetAnalysis: () => void;
 }
 
 export function useEATAnalysis(): UseEATAnalysisReturn {
   const [results, setResults] = useState<AnalysisResults | null>(null);
+  const [batchResults, setBatchResults] = useState<BatchAnalysisResults | null>(null);
   const [progress, setProgress] = useState<AnalysisProgress>({
     status: 'idle',
     message: 'Ready to analyze',
@@ -38,6 +44,8 @@ export function useEATAnalysis(): UseEATAnalysisReturn {
     }
 
     try {
+      setResults(null);
+      setBatchResults(null);
       updateProgress('uploading', 'Uploading CT scan...', 10);
       const formData = new FormData();
       formData.append('file', params.inputFile);
@@ -75,22 +83,85 @@ export function useEATAnalysis(): UseEATAnalysisReturn {
       }
 
       setResults(data.results as AnalysisResults);
+      setBatchResults(null);
       updateProgress('complete', 'Analysis complete', 100);
     } catch (error) {
       updateProgress('error', error instanceof Error ? error.message : 'Analysis failed', 0);
     }
   }, []);
 
+  const startBatchAnalysis = useCallback(async (params: BatchAnalysisParams) => {
+    if (!params.inputFiles || params.inputFiles.length === 0) {
+      updateProgress('error', 'No input files selected', 0);
+      return;
+    }
+
+    try {
+      setResults(null);
+      setBatchResults(null);
+      updateProgress('uploading', 'Uploading batch...', 10);
+      const formData = new FormData();
+      params.inputFiles.forEach(file => {
+        formData.append('files', file);
+      });
+      if (params.outputPath) {
+        formData.append('output_path', params.outputPath);
+      }
+      formData.append('hu_low', params.huLow.toString());
+      formData.append('hu_high', params.huHigh.toString());
+      formData.append('device', params.device);
+      formData.append('save_eat_mask', params.saveEATMask ? 'true' : 'false');
+
+      updateProgress('segmenting', 'Running batch analysis...', 35);
+      const response = await fetch(`${API_BASE_URL}/api/analyze-batch`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        let detail = 'Batch analysis failed';
+        try {
+          const payload = (await response.json()) as { detail?: string };
+          if (payload.detail) {
+            detail = payload.detail;
+          }
+        } catch {
+          // ignore JSON parsing errors
+        }
+        throw new Error(detail);
+      }
+
+      updateProgress('calculating', 'Finalizing batch results...', 85);
+      const data = (await response.json()) as BatchAnalysisResponse;
+      if (!data.success || !data.results) {
+        throw new Error(data.error || 'Batch analysis failed');
+      }
+
+      setBatchResults(data.results as BatchAnalysisResults);
+      setResults(null);
+      updateProgress('complete', 'Batch analysis complete', 100);
+    } catch (error) {
+      updateProgress(
+        'error',
+        error instanceof Error ? error.message : 'Batch analysis failed',
+        0
+      );
+    }
+  }, []);
+
   const resetAnalysis = useCallback(() => {
     setResults(null);
+    setBatchResults(null);
     updateProgress('idle', 'Ready to analyze', 0);
   }, []);
 
   return {
     results,
+    batchResults,
     progress,
     isProcessing,
     startAnalysis,
+    startBatchAnalysis,
     resetAnalysis,
   };
 }

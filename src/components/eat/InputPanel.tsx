@@ -5,42 +5,84 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { AnalysisParams } from '@/types/eat';
+import type { AnalysisParams, BatchAnalysisParams } from '@/types/eat';
 
 interface InputPanelProps {
   onStartAnalysis: (params: AnalysisParams) => void;
+  onStartBatchAnalysis: (params: BatchAnalysisParams) => void;
   onReset: () => void;
   isProcessing: boolean;
   hasResults: boolean;
 }
 
-export function InputPanel({ onStartAnalysis, onReset, isProcessing, hasResults }: InputPanelProps) {
+export function InputPanel({
+  onStartAnalysis,
+  onStartBatchAnalysis,
+  onReset,
+  isProcessing,
+  hasResults,
+}: InputPanelProps) {
   const [inputFile, setInputFile] = useState<File | null>(null);
+  const [inputFiles, setInputFiles] = useState<File[]>([]);
   const [outputPath, setOutputPath] = useState('./output');
   const [huLow, setHuLow] = useState(-190);
   const [huHigh, setHuHigh] = useState(-30);
   const [device, setDevice] = useState<'cpu' | 'gpu'>('cpu');
   const [saveEATMask, setSaveEATMask] = useState(false);
+  const [isBatch, setIsBatch] = useState(false);
+  const [fileInputKey, setFileInputKey] = useState(0);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
+    if (isBatch) {
+      setInputFiles(files);
+      setInputFile(null);
+      return;
+    }
+    const file = files[0];
     if (file) {
       setInputFile(file);
+      setInputFiles([]);
     }
   };
 
   const handleSubmit = () => {
-    onStartAnalysis({
-      inputFile,
-      outputPath,
-      huLow,
-      huHigh,
-      device,
-      saveEATMask,
-    });
+    if (isBatch) {
+      onStartBatchAnalysis({
+        inputFiles,
+        outputPath,
+        huLow,
+        huHigh,
+        device,
+        saveEATMask,
+      });
+    } else {
+      onStartAnalysis({
+        inputFile,
+        outputPath,
+        huLow,
+        huHigh,
+        device,
+        saveEATMask,
+      });
+    }
   };
 
-  const isValid = inputFile !== null;
+  const isValid = isBatch ? inputFiles.length > 0 : inputFile !== null;
+  const fileLabel = isBatch
+    ? inputFiles.length > 0
+      ? `${inputFiles.length} files selected`
+      : 'Select CT scans...'
+    : inputFile
+      ? inputFile.name
+      : 'Select CT scan...';
+
+  const handleBatchToggle = (checked: boolean) => {
+    setIsBatch(checked);
+    setInputFile(null);
+    setInputFiles([]);
+    setFileInputKey(prev => prev + 1);
+  };
 
   return (
     <div className="space-y-6">
@@ -49,16 +91,30 @@ export function InputPanel({ onStartAnalysis, onReset, isProcessing, hasResults 
         <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
           Input
         </h3>
+
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="batch-mode"
+            checked={isBatch}
+            onCheckedChange={(checked) => handleBatchToggle(checked === true)}
+            disabled={isProcessing}
+          />
+          <Label htmlFor="batch-mode" className="text-sm text-muted-foreground">
+            Batch mode (multiple NIfTI files)
+          </Label>
+        </div>
         
         <div className="space-y-2">
           <Label htmlFor="ct-file" className="text-sm text-muted-foreground">
-            CT Scan (NIfTI)
+            {isBatch ? 'CT Scans (NIfTI)' : 'CT Scan (NIfTI)'}
           </Label>
           <div className="relative">
             <Input
+              key={fileInputKey}
               id="ct-file"
               type="file"
               accept=".nii,.nii.gz"
+              multiple={isBatch}
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -70,7 +126,7 @@ export function InputPanel({ onStartAnalysis, onReset, isProcessing, hasResults 
             >
               <Upload className="mr-2 h-4 w-4 text-muted-foreground" />
               <span className="truncate">
-                {inputFile ? inputFile.name : 'Select CT scan...'}
+                {fileLabel}
               </span>
             </Button>
           </div>
@@ -202,7 +258,7 @@ export function InputPanel({ onStartAnalysis, onReset, isProcessing, hasResults 
           ) : (
             <>
               <Play className="mr-2 h-4 w-4" />
-              Run Analysis
+              {isBatch ? 'Run Batch' : 'Run Analysis'}
             </>
           )}
         </Button>
