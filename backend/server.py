@@ -23,6 +23,10 @@ from backend.eat_core import (
     save_eat_mask_nifti,
     save_stats_csv,
 )
+from backend.eat_core import (
+    run_totalsegmentation_task,
+    compute_myocardium_ff,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -35,7 +39,14 @@ app = FastAPI(title="EAT Analysis API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8080", "http://127.0.0.1:8080"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+    ],
     allow_credentials=True,
     allow_methods=["*"] ,
     allow_headers=["*"],
@@ -97,6 +108,7 @@ def _write_batch_stats_csv(csv_path: Path, rows: list[dict[str, object]]) -> Non
                 "EAT_Volume_ml",
                 "Mean_HU",
                 "Std_HU",
+                "FF_Myocardium",
                 "Low_HU",
                 "High_HU",
             ]
@@ -111,6 +123,7 @@ def _write_batch_stats_csv(csv_path: Path, rows: list[dict[str, object]]) -> Non
                     "{:.3f}".format(float(row.get("eat_volume", 0.0))),
                     "{:.3f}".format(float(row.get("mean_hu", 0.0))),
                     "{:.3f}".format(float(row.get("std_hu", 0.0))),
+                    "" if row.get("ff_myocardium", None) is None else "{:.6f}".format(float(row.get("ff_myocardium", 0.0))),
                     row.get("low_hu", ""),
                     row.get("high_hu", ""),
                 ]
@@ -183,7 +196,10 @@ async def analyze(
         with ct_path.open("wb") as handle:
             shutil.copyfileobj(file.file, handle)
 
-        pericardium_path = run_totalsegmentation(str(ct_path), str(output_dir), device=device)
+        # Run the default segmentation to obtain pericardium (used for EAT)
+        pericardium_path, _ = run_totalsegmentation(str(ct_path), str(output_dir), device=device)
+
+        # Run EAT computation (pericardium-based)
         results = compute_eat_and_stats(
             str(ct_path),
             pericardium_path,
@@ -191,6 +207,17 @@ async def analyze(
             high_hu=hu_high,
             return_arrays=False,
         )
+
+        # Run a separate high-res segmentation for myocardium and compute FF
+        myocardium_highres = None
+        ff_myocardium = None
+        try:
+            myocardium_highres = run_totalsegmentation_task(str(ct_path), str(output_dir), "heartchambers_highres", device=device)
+            ff_myocardium = compute_myocardium_ff(str(ct_path), myocardium_highres, hu_low, hu_high)
+        except Exception:
+            myocardium_highres = None
+            ff_myocardium = None
+
         stats_csv = save_stats_csv(
             str(output_dir),
             str(ct_path),
@@ -200,6 +227,7 @@ async def analyze(
             eat_volume=results["eat_volume"],
             mean_hu=results["mean_hu"],
             std_hu=results["std_hu"],
+            ff_myocardium=ff_myocardium,
         )
         if save_eat_mask:
             save_eat_mask_nifti(
@@ -218,9 +246,11 @@ async def analyze(
     ANALYSIS_CACHE[analysis_id] = {
         "ct_path": str(ct_path),
         "pericardium_path": pericardium_path,
+        "myocardium_highres_path": myocardium_highres,
         "hu_low": hu_low,
         "hu_high": hu_high,
         "total_slices": results["total_slices"],
+        "ff_myocardium": ff_myocardium,
     }
 
     return {
@@ -230,6 +260,7 @@ async def analyze(
             "eatVolume": results["eat_volume"],
             "meanHU": results["mean_hu"],
             "stdHU": results["std_hu"],
+            "ffMyocardium": ff_myocardium,
             "voxelZoom": list(results["zooms"]),
             "totalSlices": results["total_slices"],
             "outputPath": str(output_dir),
@@ -284,7 +315,10 @@ async def analyze_batch(
             with ct_path.open("wb") as handle:
                 shutil.copyfileobj(file.file, handle)
 
-            pericardium_path = run_totalsegmentation(str(ct_path), str(participant_dir), device=device)
+            # Pericardium (EAT) segmentation
+            pericardium_path, _ = run_totalsegmentation(
+                str(ct_path), str(participant_dir), device=device
+            )
             results = compute_eat_and_stats(
                 str(ct_path),
                 pericardium_path,
@@ -292,6 +326,17 @@ async def analyze_batch(
                 high_hu=hu_high,
                 return_arrays=False,
             )
+
+            # High-res myocardium segmentation and FF computation
+            myocardium_highres = None
+            ff_myocardium = None
+            try:
+                myocardium_highres = run_totalsegmentation_task(str(ct_path), str(participant_dir), "heartchambers_highres", device=device)
+                ff_myocardium = compute_myocardium_ff(str(ct_path), myocardium_highres, hu_low, hu_high)
+            except Exception:
+                myocardium_highres = None
+                ff_myocardium = None
+
             stats_csv = save_stats_csv(
                 str(participant_dir),
                 str(ct_path),
@@ -301,6 +346,7 @@ async def analyze_batch(
                 eat_volume=results["eat_volume"],
                 mean_hu=results["mean_hu"],
                 std_hu=results["std_hu"],
+                ff_myocardium=ff_myocardium,
             )
             eat_mask_path = None
             if save_eat_mask:
@@ -329,6 +375,7 @@ async def analyze_batch(
                     "eatVolume": results["eat_volume"],
                     "meanHU": results["mean_hu"],
                     "stdHU": results["std_hu"],
+                    "ffMyocardium": ff_myocardium,
                     "lowHU": hu_low,
                     "highHU": hu_high,
                 },
@@ -343,6 +390,7 @@ async def analyze_batch(
                     "eat_volume": results["eat_volume"],
                     "mean_hu": results["mean_hu"],
                     "std_hu": results["std_hu"],
+                    "ff_myocardium": ff_myocardium,
                     "low_hu": hu_low,
                     "high_hu": hu_high,
                 }
@@ -417,6 +465,14 @@ def get_slice(analysis_id: str, slice: int) -> dict:
 
     ct_img = nib.load(str(analysis["ct_path"]))
     peri_img = nib.load(str(analysis["pericardium_path"]))
+    # Prefer high-res myocardium mask if available
+    myo_path = analysis.get("myocardium_highres_path") or analysis.get("myocardium_path")
+    myo_img = None
+    if myo_path:
+        try:
+            myo_img = nib.load(str(myo_path))
+        except Exception:
+            myo_img = None
 
     ct_slice = np.asarray(ct_img.dataobj[:, :, slice])
     peri_slice = np.asarray(peri_img.dataobj[:, :, slice]) > 0
@@ -424,10 +480,19 @@ def get_slice(analysis_id: str, slice: int) -> dict:
         peri_slice,
         np.logical_and(ct_slice >= analysis["hu_low"], ct_slice <= analysis["hu_high"]),
     )
+    myo_slice = None
+    if myo_img is not None:
+        try:
+            myo_slice = np.asarray(myo_img.dataobj[:, :, slice]) > 0
+        except Exception:
+            myo_slice = None
 
     ct_png = _png_data_url(Image.fromarray(_normalize_ct_slice(ct_slice), mode="L"))
     pericardium_png = _mask_png(peri_slice, (34, 197, 94))
     eat_png = _mask_png(eat_slice, (239, 68, 68))
+    myocardium_png = None
+    if myo_slice is not None:
+        myocardium_png = _mask_png(myo_slice, (99, 102, 241))
 
     return {
         "slice": slice,
@@ -435,5 +500,6 @@ def get_slice(analysis_id: str, slice: int) -> dict:
         "ctPng": ct_png,
         "pericardiumPng": pericardium_png,
         "eatPng": eat_png,
+        "myocardiumPng": myocardium_png,
     }
 

@@ -7,7 +7,7 @@ interface UseSliceViewerReturn {
   nextSlice: () => void;
   prevSlice: () => void;
   onWheelDelta: (deltaY: number) => void;
-  toggleLayer: (layer: 'ct' | 'eat' | 'pericardium') => void;
+  toggleLayer: (layer: 'ct' | 'eat' | 'pericardium' | 'myocardium') => void;
   setOpacity: (opacity: number) => void;
   rotateLeft: () => void;
   rotateRight: () => void;
@@ -28,6 +28,7 @@ type SliceImageSet = {
   ct: HTMLImageElement;
   eat: HTMLImageElement;
   pericardium: HTMLImageElement;
+  myocardium?: HTMLImageElement;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -147,6 +148,16 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+function createEmptyImage(): Promise<HTMLImageElement> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve(img);
+    // 1x1 transparent PNG
+    img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+  });
+}
+
 function drawRotatedImage(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
@@ -177,6 +188,7 @@ export function useSliceViewer(initialTotalSlices = 120): UseSliceViewerReturn {
     showCT: true,
     showEAT: true,
     showPericardium: true,
+    showMyocardium: false,
     overlayOpacity: 0.7,
     rotation: 0,
   });
@@ -223,17 +235,24 @@ export function useSliceViewer(initialTotalSlices = 120): UseSliceViewerReturn {
       { signal }
     );
     if (!response.ok) {
-      throw new Error('Failed to fetch slice data');
+      let txt = '';
+      try {
+        txt = await response.text();
+      } catch (_) {
+        txt = '';
+      }
+      throw new Error(`Failed to fetch slice data: ${response.status} ${response.statusText} ${txt}`);
     }
 
-    const data = (await response.json()) as SliceImagesResponse;
-    const [ct, eat, pericardium] = await Promise.all([
-      loadImage(data.ctPng),
-      loadImage(data.eatPng),
-      loadImage(data.pericardiumPng),
-    ]);
+    const data = (await response.json()) as SliceImagesResponse & { myocardiumPng?: string | null };
+    const ctP = loadImage(data.ctPng);
+    const eatP = loadImage(data.eatPng);
+    const periP = loadImage(data.pericardiumPng);
+    const myoP = data.myocardiumPng ? loadImage(data.myocardiumPng) : createEmptyImage();
 
-    return { ct, eat, pericardium };
+    const [ct, eat, pericardium, myocardium] = await Promise.all([ctP, eatP, periP, myoP]);
+
+    return { ct, eat, pericardium, myocardium };
   }, []);
 
   const prefetchSlice = useCallback((sliceIndex: number, analysisIdValue: string) => {
@@ -245,7 +264,7 @@ export function useSliceViewer(initialTotalSlices = 120): UseSliceViewerReturn {
     prefetchInFlightRef.current.add(sliceIndex);
     fetchSliceSet(sliceIndex, analysisIdValue)
       .then(sliceSet => {
-        cacheSliceSet(sliceIndex, sliceSet);
+        cacheSliceSet(sliceIndex, sliceSet as SliceImageSet);
       })
       .catch(() => null)
       .finally(() => {
@@ -302,7 +321,9 @@ export function useSliceViewer(initialTotalSlices = 120): UseSliceViewerReturn {
       }
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        // Keep last rendered slice on fetch errors.
+        // Log fetch errors to help debugging while keeping last rendered slice.
+        // eslint-disable-next-line no-console
+        console.error('Failed to load slice images', error);
       }
     }
   }, [analysisId, cacheSliceSet, fetchSliceSet, prefetchSlice, viewerState.totalSlices]);
@@ -332,12 +353,17 @@ export function useSliceViewer(initialTotalSlices = 120): UseSliceViewerReturn {
       if (viewerState.showCT) {
         drawRotatedImage(ctx, imagesToDraw.ct, rotation, canvas.width, canvas.height);
       }
-      if (viewerState.showPericardium) {
+      if (viewerState.showPericardium && imagesToDraw.pericardium) {
         ctx.globalAlpha = viewerState.overlayOpacity;
         drawRotatedImage(ctx, imagesToDraw.pericardium, rotation, canvas.width, canvas.height);
         ctx.globalAlpha = 1;
       }
-      if (viewerState.showEAT) {
+      if (viewerState.showMyocardium && imagesToDraw.myocardium) {
+        ctx.globalAlpha = viewerState.overlayOpacity;
+        drawRotatedImage(ctx, imagesToDraw.myocardium, rotation, canvas.width, canvas.height);
+        ctx.globalAlpha = 1;
+      }
+      if (viewerState.showEAT && imagesToDraw.eat) {
         ctx.globalAlpha = viewerState.overlayOpacity;
         drawRotatedImage(ctx, imagesToDraw.eat, rotation, canvas.width, canvas.height);
         ctx.globalAlpha = 1;
@@ -432,12 +458,13 @@ export function useSliceViewer(initialTotalSlices = 120): UseSliceViewerReturn {
     }));
   }, [clampSlice]);
 
-  const toggleLayer = useCallback((layer: 'ct' | 'eat' | 'pericardium') => {
+  const toggleLayer = useCallback((layer: 'ct' | 'eat' | 'pericardium' | 'myocardium') => {
     setViewerState(prev => ({
       ...prev,
       showCT: layer === 'ct' ? !prev.showCT : prev.showCT,
       showEAT: layer === 'eat' ? !prev.showEAT : prev.showEAT,
       showPericardium: layer === 'pericardium' ? !prev.showPericardium : prev.showPericardium,
+      showMyocardium: layer === 'myocardium' ? !prev.showMyocardium : prev.showMyocardium,
     }));
   }, []);
 
