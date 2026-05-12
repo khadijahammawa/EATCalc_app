@@ -22,6 +22,7 @@ export interface AnalysisResults {
   eatVolume: number; // in mL
   meanHU: number;
   stdHU: number;
+  ffMyocardium?: number;
   voxelZoom: [number, number, number];
   totalSlices: number;
   outputPath: string;
@@ -53,6 +54,7 @@ export interface SliceData {
   ct: ImageData | null;
   eatMask: ImageData | null;
   pericardium: ImageData | null;
+  myocardium?: ImageData | null;
 }
 
 export interface ViewerState {
@@ -61,6 +63,7 @@ export interface ViewerState {
   showCT: boolean;
   showEAT: boolean;
   showPericardium: boolean;
+  showMyocardium: boolean;
   overlayOpacity: number;
   rotation: number;
 }

@@ -13,7 +13,7 @@ interface AxialViewerProps {
   onNextSlice: () => void;
   onPrevSlice: () => void;
   onWheelDelta: (deltaY: number) => void;
-  onToggleLayer: (layer: 'ct' | 'eat' | 'pericardium') => void;
+  onToggleLayer: (layer: 'ct' | 'eat' | 'pericardium' | 'myocardium') => void;
   onOpacityChange: (opacity: number) => void;
   onRotateLeft: () => void;
   onRotateRight: () => void;
@@ -91,6 +91,12 @@ export function AxialViewer({
             label="Pericardium"
             color="bg-success"
           />
+          <LayerToggle
+            checked={viewerState.showMyocardium}
+            onChange={() => onToggleLayer('myocardium')}
+            label="Myocardium"
+            color="bg-primary"
+          />
 
           <div className="flex items-center gap-2 pl-2 border-l border-border">
             <Button
@@ -164,6 +170,12 @@ export function AxialViewer({
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-sm bg-success" />
                   <span className="text-background">Pericardium</span>
+                </div>
+              )}
+              {viewerState.showMyocardium && (
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm bg-primary" />
+                  <span className="text-background">Myocardium</span>
                 </div>
               )}
             </div>

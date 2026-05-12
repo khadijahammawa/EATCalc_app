@@ -146,21 +146,25 @@ export function ResultsPanel({ results, batchResults }: ResultsPanelProps) {
   }
 
   const handleCopyResults = () => {
+    const ffText = results.ffMyocardium == null ? 'N/A' : `${(results.ffMyocardium * 100).toFixed(2)}%`;
     const text = `EAT Analysis Results
 Volume: ${results.eatVolume.toFixed(1)} mL
 Mean HU: ${results.meanHU.toFixed(1)}
 Std HU: ${results.stdHU.toFixed(1)}
+FF Myocardium: ${ffText}
 Voxel Size: ${results.voxelZoom.map(v => v.toFixed(2)).join(' × ')} mm`;
-    
+
     navigator.clipboard.writeText(text);
     toast.success('Results copied to clipboard');
   };
 
   const handleExportCSV = () => {
+    const ffValue = results.ffMyocardium == null ? '' : (results.ffMyocardium * 100).toFixed(4);
     const csv = `Metric,Value,Unit
 EAT Volume,${results.eatVolume.toFixed(2)},mL
 Mean HU,${results.meanHU.toFixed(2)},HU
 Std HU,${results.stdHU.toFixed(2)},HU
+FF Myocardium,${ffValue},%
 Voxel X,${results.voxelZoom[0].toFixed(3)},mm
 Voxel Y,${results.voxelZoom[1].toFixed(3)},mm
 Voxel Z,${results.voxelZoom[2].toFixed(3)},mm
@@ -193,7 +197,7 @@ Total Slices,${results.totalSlices},`;
       </div>
 
       {/* Secondary Metrics */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <MetricCard
           icon={<Activity className="h-4 w-4" />}
           label="Mean HU"
@@ -205,6 +209,12 @@ Total Slices,${results.totalSlices},`;
           label="Std HU"
           value={results.stdHU.toFixed(1)}
           unit="HU"
+        />
+        <MetricCard
+          icon={<Heart className="h-4 w-4" />}
+          label="FF Myocardium"
+          value={results.ffMyocardium == null ? 'N/A' : (results.ffMyocardium * 100).toFixed(2)}
+          unit="%"
         />
       </div>
 
