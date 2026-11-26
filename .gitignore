@@ -39,3 +39,6 @@ env/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Regression baselines contain patient-derived masks: never commit
+eval/baseline/
