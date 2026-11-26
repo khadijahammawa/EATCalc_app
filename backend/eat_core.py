@@ -4,12 +4,30 @@ Core EAT analysis functions shared by GUI and backend.
 
 from __future__ import annotations
 
+import functools
+import hashlib
+import json
 import os
+import platform
 import subprocess
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import nibabel as nib
+
+
+# ---------------------------------------------------------------------------
+# Locked measurement definition (EATCalc-classic). See docs/MEASUREMENT_DEFINITION.md.
+# Changing any of these changes the quantity EATCalc reports: bump METHOD_VERSION
+# and update the regression tests in tests/test_eat_core.py.
+# ---------------------------------------------------------------------------
+METHOD_NAME = "EATCalc-classic"
+METHOD_VERSION = "1.0.0"
+PERICARDIUM_TASK = "trunk_cavities"   # TotalSegmentator task providing the pericardium label
+PERICARDIUM_LABEL = "pericardium"
+DEFAULT_LOW_HU = -190.0               # inclusive
+DEFAULT_HIGH_HU = -30.0               # inclusive
 
 
 def run_totalsegmentation(ct_path: str, out_dir: str, device: str = "cpu") -> tuple[str, Optional[str]]:
@@ -21,8 +39,8 @@ def run_totalsegmentation(ct_path: str, out_dir: str, device: str = "cpu") -> tu
     """
     pericardium_path = os.path.join(out_dir, "pericardium.nii.gz")
     myocardium_path: Optional[str] = None
-    if os.path.exists(pericardium_path):
-        # Try to discover myocardium file next to the pericardium mask
+    if os.path.exists(pericardium_path) and _seg_cache_is_valid(out_dir, ct_path, PERICARDIUM_TASK):
+        # Reuse only a mask produced from this exact CT with the same TotalSegmentator version.
         myocardium_path = _find_label(out_dir, "myocardium")
         return pericardium_path, myocardium_path
 
@@ -35,7 +53,7 @@ def run_totalsegmentation(ct_path: str, out_dir: str, device: str = "cpu") -> tu
         "-o",
         out_dir,
         "--task",
-        "trunk_cavities",
+        PERICARDIUM_TASK,
         "--device",
         device,
     ]
@@ -60,8 +78,23 @@ def run_totalsegmentation(ct_path: str, out_dir: str, device: str = "cpu") -> tu
         else:
             raise FileNotFoundError("Could not find pericardium.nii.gz after TotalSegmentator.")
 
+    _write_seg_cache_record(out_dir, ct_path, PERICARDIUM_TASK)
     myocardium_path = _find_label(out_dir, "myocardium")
     return pericardium_path, myocardium_path
+
+
+def compute_eat_mask(
+    ct_data: np.ndarray, pericardium_data: np.ndarray, low_hu: float, high_hu: float
+) -> np.ndarray:
+    """EAT mask = (pericardium label > 0) AND (low_hu <= HU <= high_hu), both edges inclusive.
+
+    This is the only place the EAT definition is implemented; every other function calls it.
+    """
+    pericardium_mask = pericardium_data > 0
+    return np.logical_and(
+        pericardium_mask,
+        np.logical_and(ct_data >= low_hu, ct_data <= high_hu),
+    )
 
 
 def compute_eat_and_stats(
@@ -89,10 +122,7 @@ def compute_eat_and_stats(
         )
 
     pericardium_mask = peri_data > 0
-    eat_mask = np.logical_and(
-        pericardium_mask,
-        np.logical_and(ct_data >= low_hu, ct_data <= high_hu),
-    )
+    eat_mask = compute_eat_mask(ct_data, peri_data, low_hu, high_hu)
 
     zooms = tuple(float(z) for z in ct_img.header.get_zooms())
     voxel_volume_ml = float(np.prod(zooms) / 1000.0)
@@ -129,7 +159,7 @@ def run_totalsegmentation_task(
     task_dir = os.path.join(out_dir, task)
     # Try to find the label before running
     found = None
-    if os.path.exists(task_dir):
+    if os.path.exists(task_dir) and _seg_cache_is_valid(task_dir, ct_path, task):
         found = _find_label(task_dir, label_hint)
         if found:
             return found
@@ -161,6 +191,7 @@ def run_totalsegmentation_task(
             )
         ) from exc
 
+    _write_seg_cache_record(task_dir, ct_path, task)
     return _find_label(task_dir, label_hint)
 
 
@@ -223,11 +254,7 @@ def save_eat_mask_nifti(
             )
         )
 
-    pericardium_mask = peri_data > 0
-    eat_mask = np.logical_and(
-        pericardium_mask,
-        np.logical_and(ct_data >= low_hu, ct_data <= high_hu),
-    )
+    eat_mask = compute_eat_mask(ct_data, peri_data, low_hu, high_hu)
 
     header = ct_img.header.copy()
     header.set_data_dtype(np.uint8)
@@ -279,6 +306,106 @@ def save_stats_csv(
             )
         )
     return stats_csv
+
+
+@functools.lru_cache(maxsize=1)
+def get_totalsegmentator_version() -> str:
+    """Version of the TotalSegmentator CLI on PATH (cached per process), or 'unknown'."""
+    try:
+        out = subprocess.run(
+            ["TotalSegmentator", "--version"],
+            capture_output=True, text=True, timeout=120, check=True,
+        )
+        version = (out.stdout or out.stderr).strip().splitlines()
+        if version:
+            return version[-1].strip()
+    except Exception:
+        pass
+    try:
+        from importlib.metadata import version as _pkg_version
+        return _pkg_version("TotalSegmentator")
+    except Exception:
+        return "unknown"
+
+
+@functools.lru_cache(maxsize=1)
+def get_git_commit() -> str:
+    """Git commit of this EATCalc checkout ('-dirty' if there are uncommitted changes), or 'unknown'."""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=repo,
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"], cwd=repo,
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+        return commit + ("-dirty" if dirty else "")
+    except Exception:
+        return "unknown"
+
+
+def get_provenance(
+    low_hu: float = DEFAULT_LOW_HU,
+    high_hu: float = DEFAULT_HIGH_HU,
+    device: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Everything needed to reproduce (or audit) an EATCalc number."""
+    return {
+        "method": METHOD_NAME,
+        "method_version": METHOD_VERSION,
+        "pericardium_task": PERICARDIUM_TASK,
+        "hu_window": [float(low_hu), float(high_hu)],
+        "hu_window_is_default": (float(low_hu), float(high_hu)) == (DEFAULT_LOW_HU, DEFAULT_HIGH_HU),
+        "totalsegmentator_version": get_totalsegmentator_version(),
+        "eatcalc_git_commit": get_git_commit(),
+        "device": device,
+        "python": platform.python_version(),
+        "numpy": np.__version__,
+        "nibabel": nib.__version__,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+SEG_CACHE_RECORD = "eatcalc_segmentation_source.json"
+
+
+def file_sha256(path: str, chunk_size: int = 1 << 20) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_seg_cache_record(seg_dir: str, ct_path: str, task: str) -> None:
+    """Record which CT (by content hash), task and TotalSegmentator version produced the masks in seg_dir."""
+    record = {
+        "ct_sha256": file_sha256(ct_path),
+        "task": task,
+        "totalsegmentator_version": get_totalsegmentator_version(),
+    }
+    with open(os.path.join(seg_dir, SEG_CACHE_RECORD), "w", encoding="utf-8") as handle:
+        json.dump(record, handle, indent=2)
+
+
+def _seg_cache_is_valid(seg_dir: str, ct_path: str, task: str) -> bool:
+    """True only if cached masks in seg_dir were made from this CT, task and TotalSegmentator version.
+
+    Masks without a record (made before EATCalc 1.0.0) are treated as stale and regenerated.
+    """
+    record_path = os.path.join(seg_dir, SEG_CACHE_RECORD)
+    try:
+        with open(record_path, encoding="utf-8") as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return (
+        record.get("ct_sha256") == file_sha256(ct_path)
+        and record.get("task") == task
+        and record.get("totalsegmentator_version") == get_totalsegmentator_version()
+    )
 
 
 def _find_pericardium(out_dir: str) -> Optional[str]:

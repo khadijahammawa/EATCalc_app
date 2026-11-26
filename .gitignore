@@ -34,3 +34,8 @@ cache/
 venv/
 ENV/
 env/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/

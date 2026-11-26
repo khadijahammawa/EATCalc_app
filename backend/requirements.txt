@@ -1,6 +1,9 @@
-fastapi
-uvicorn[standard]
-python-multipart
-numpy
-nibabel
-pillow
+# Pinned for reproducibility (EATCalc-classic 1.0.0). Versions match the working .venv.
+# TotalSegmentator is installed separately (conda env "totalseg"); its version is
+# recorded in env/ by scripts/freeze_env.bat and in every eat_provenance.json.
+fastapi==0.135.2
+uvicorn[standard]==0.42.0
+python-multipart==0.0.22
+numpy==2.2.6
+nibabel==5.4.2
+pillow==12.1.1

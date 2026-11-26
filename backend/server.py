@@ -18,6 +18,10 @@ import nibabel as nib
 from PIL import Image
 
 from backend.eat_core import (
+    DEFAULT_HIGH_HU,
+    DEFAULT_LOW_HU,
+    file_sha256,
+    get_provenance,
     compute_eat_and_stats,
     run_totalsegmentation,
     save_eat_mask_nifti,
@@ -174,12 +178,25 @@ def health_check() -> dict:
     return {"ok": True}
 
 
+@app.get("/api/version")
+def version_info() -> dict:
+    """Method definition and software versions this server would use for a new analysis."""
+    return get_provenance()
+
+
+def _write_provenance(path: Path, provenance: dict) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(provenance, handle, indent=2)
+    return str(path)
+
+
 @app.post("/api/analyze")
 async def analyze(
     file: UploadFile = File(...),
     output_path: Optional[str] = Form(None),
-    hu_low: float = Form(-190.0),
-    hu_high: float = Form(-30.0),
+    hu_low: float = Form(DEFAULT_LOW_HU),
+    hu_high: float = Form(DEFAULT_HIGH_HU),
     device: str = Form("cpu"),
     save_eat_mask: bool = Form(False),
 ) -> dict:
@@ -237,6 +254,11 @@ async def analyze(
                 hu_low,
                 hu_high,
             )
+
+        provenance = get_provenance(hu_low, hu_high, device=device)
+        provenance["ct_file"] = file.filename
+        provenance["ct_sha256"] = file_sha256(str(ct_path))
+        provenance_path = _write_provenance(output_dir / "eat_provenance.json", provenance)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
@@ -265,6 +287,8 @@ async def analyze(
             "totalSlices": results["total_slices"],
             "outputPath": str(output_dir),
             "statsCsv": stats_csv,
+            "provenance": provenance,
+            "provenancePath": provenance_path,
         },
     }
 
@@ -273,8 +297,8 @@ async def analyze(
 async def analyze_batch(
     files: list[UploadFile] = File(...),
     output_path: Optional[str] = Form(None),
-    hu_low: float = Form(-190.0),
-    hu_high: float = Form(-30.0),
+    hu_low: float = Form(DEFAULT_LOW_HU),
+    hu_high: float = Form(DEFAULT_HIGH_HU),
     device: str = Form("cpu"),
     save_eat_mask: bool = Form(False),
 ) -> dict:
@@ -358,6 +382,13 @@ async def analyze_batch(
                     hu_high,
                 )
 
+            participant_provenance = get_provenance(hu_low, hu_high, device=device)
+            participant_provenance["ct_file"] = file.filename
+            participant_provenance["ct_sha256"] = file_sha256(str(ct_path))
+            provenance_path = _write_provenance(
+                participant_dir / "eat_provenance.json", participant_provenance
+            )
+
             item = {
                 "participantId": participant_id,
                 "participantIdSource": participant_source,
@@ -370,7 +401,9 @@ async def analyze_batch(
                     "pericardium": pericardium_path,
                     "eatMask": eat_mask_path,
                     "statsCsv": stats_csv,
+                    "provenance": provenance_path,
                 },
+                "ctSha256": participant_provenance["ct_sha256"],
                 "stats": {
                     "eatVolume": results["eat_volume"],
                     "meanHU": results["mean_hu"],
@@ -419,6 +452,7 @@ async def analyze_batch(
         "batchId": batch_id,
         "createdAt": started_at,
         "outputRoot": str(output_dir),
+        "provenance": get_provenance(hu_low, hu_high, device=device),
         "settings": {
             "huLow": hu_low,
             "huHigh": hu_high,
